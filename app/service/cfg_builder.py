@@ -95,9 +95,20 @@ def extract_cfg(tree):
         if source == target:  # Avoid self-loops
             return
             
-        # Check for duplicate edges - THIS IS THE KEY FIX
-        if any(e["source"] == str(source) and e["target"] == str(target) for e in edges):
+        # === MODIFIKASI: Cek edge yang sudah ada & UPDATE labelnya ===
+        existing_edge = next((e for e in edges if e["source"] == str(source) and e["target"] == str(target)), None)
+        
+        if existing_edge:
+            # Jika edge sudah ada, tapi kita ingin memberi label baru (misal True/False)
+            if label and not existing_edge.get("label"):
+                existing_edge["label"] = label
+                # Update warna jika perlu
+                if edge_type == "true":
+                    existing_edge["style"]["stroke"] = "#2ECC71"
+                elif edge_type == "false":
+                    existing_edge["style"]["stroke"] = "#EF4444"
             return
+        # ==============================================================
             
         edge_style = {
             "strokeWidth": 2, 
@@ -114,7 +125,7 @@ def extract_cfg(tree):
         elif edge_type == "true":
             edge_style["stroke"] = "#2ECC71"  # Green for true conditions
         elif edge_type == "false":
-            edge_style["stroke"] = "#3498DB"  # Blue for false conditions
+            edge_style["stroke"] = "#EF4444"  # Red for false conditions (Ganti ke Merah agar sesuai frontend)
         
         # FIXED: Always include label if provided
         edge_data = {
@@ -176,7 +187,7 @@ def extract_cfg(tree):
                             if result["has_else"]:
                                 create_edge(result["false_end"], next_id)
                             else:
-                                create_edge(result["if_node"], next_id, "false", False, "false")
+                                create_edge(result["if_node"], next_id, "False", False, "false")
                         
                         last_node = next_id
                         i += 2
@@ -209,33 +220,39 @@ def extract_cfg(tree):
             if parent_id is not None:
                 create_edge(parent_id, if_id)
             
-            # Process true branch with offset to the right
+            # Process true branch
             true_branch = None
             true_last = None
             for i, stmt in enumerate(node.body):
+                # Saat i=0, parent adalah if_id. visit() akan otomatis membuat edge.
                 true_branch = visit(stmt, if_id if i == 0 else true_branch, depth + 1, branch_index + 1)
+                
+                # === MODIFIKASI: Tambahkan Label True ke edge pertama ===
+                if i == 0:
+                    # Ambil ID target (jika result dict, ambil if_node-nya)
+                    target_id = true_branch["if_node"] if isinstance(true_branch, dict) and "if_node" in true_branch else true_branch
+                    # Update edge yang baru saja dibuat dengan label True
+                    create_edge(if_id, target_id, "True", False, "true")
+                # ========================================================
+                
                 if i == len(node.body) - 1:
                     true_last = true_branch
             
-            # Process false branch with offset to the left
+            # Process false branch
             false_branch = None
             false_last = None
             if node.orelse:
                 for i, stmt in enumerate(node.orelse):
                     false_branch = visit(stmt, if_id if i == 0 else false_branch, depth + 1, branch_index + 1, True)
+                    
+                    # === MODIFIKASI: Tambahkan Label False ke edge pertama Else ===
+                    if i == 0:
+                        target_id = false_branch["if_node"] if isinstance(false_branch, dict) and "if_node" in false_branch else false_branch
+                        create_edge(if_id, target_id, "False", False, "false")
+                    # =============================================================
+                    
                     if i == len(node.orelse) - 1:
                         false_last = false_branch
-            
-            # FIXED: Add edges with proper labels
-            if true_branch:
-                create_edge(if_id, true_branch, "True", False, "true")
-            
-            if false_branch:
-                create_edge(if_id, false_branch, "False", False, "false")
-            elif not node.orelse:
-                # If there's no else clause, we need to show the False path
-                # This will be handled by the parent function
-                pass
             
             # Return structure for proper merging
             return {

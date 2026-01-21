@@ -31,9 +31,9 @@ def percabangan(x, y):
     else:
         print("test")
         
-def test(a):
-    for i in range(1, 5):
-        for j in range(1, 5):
+def perulangan(a):
+    for i in range(1, a):
+        for j in range(1, a):
             print("hallo")
         
 def luas_persegi_panjang(panjang, lebar):
