@@ -31,8 +31,6 @@ def kategori_usia(umur):
     else:
         return "Anak-anak"
 
-# 4. Level Loop: Perulangan Sederhana (While)
-# Tujuan: Menguji garis "loop back" dan memastikan Path Builder tidak terjebak infinite loop.
 def hitung_mundur(n):
     hasil = []
     while n > 0:
@@ -40,8 +38,12 @@ def hitung_mundur(n):
         n = n - 1
     return "Selesai"
 
+def nested_loop_example(n):
+    for i in range(1, n + 1):
+        for j in range(1, n + 1):
+            print(f"({i}, {j})", end=" ")
+        print()
 
-# Tujuan: Menguji kombinasi iterasi dan seleksi. Ini sering membingungkan visualisasi jika logika parent_id salah.
 def jumlahkan_genap(batas):
     total = 0
     for i in range(batas):
