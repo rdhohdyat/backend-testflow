@@ -43,7 +43,7 @@ def extract_cfg(tree):
     last_nodes = []
     
     # Visual layout settings
-    x_offset = 300
+    x_offset = 450
     y_spacing = 80
     x_spacing = 100
     
@@ -52,16 +52,6 @@ def extract_cfg(tree):
     try_blocks = {}
     visited_lines = set()
     
-    def get_position(depth=0, branch_index=0, is_else=False):
-        """Better positioning logic"""
-        branch_offset = branch_index * (x_spacing + (depth * 5))
-        if is_else:
-            x = x_offset - branch_offset + branch_offset
-        else:
-            x = x_offset + branch_offset
-        y = len(nodes) * y_spacing + 50
-        
-        return {"x": x, "y": y}
 
     def add_node(label, lineno=None, pos=None, node_type="default"):
         nonlocal node_id
@@ -142,330 +132,178 @@ def extract_cfg(tree):
             
         edges.append(edge_data)
 
-    def visit(node, parent_id=None, depth=0, branch_index=0, is_else=False):
+    def get_pos(branch_index=0, is_else=False):
+        """Simple y increment for horizontal neatness, symmetric x shift."""
+        y = (len(nodes) + 1) * 80
+        branch_offset = 120
+        if is_else:
+            x = x_offset - branch_offset
+        elif branch_index > 0:
+            x = x_offset + (branch_index * branch_offset)
+        else:
+            x = x_offset
+        return {"x": x, "y": y}
+
+    def visit(node, parent_ids, depth=0, branch_index=0, is_else=False):
+        """Universal visit that handles multiple parents and returns multiple exits."""
+        
         if isinstance(node, ast.FunctionDef):
-            # Extract parameters cleanly
-            param_list = []
-            for arg in node.args.args:
-                param_list.append(str(arg.arg))
-            
+            # Header
+            param_list = [str(arg.arg) for arg in node.args.args]
             parameters.append({"function": node.name, "params": param_list})
-            
             param_str = ", ".join(param_list) if param_list else ""
-            func_label = f"def {node.name}({param_str}):"
-
-            func_pos = {"x": x_offset, "y": len(nodes) * y_spacing + 50}
-            func_id = add_node(func_label, node.lineno, func_pos, "function")
-
-            if parent_id is not None:
-                create_edge(parent_id, func_id)
-
-            body_depth = depth + 1
-            last_node = func_id
+            label = f"def {node.name}({param_str}):"
             
-            # Process function body with better flow control
-            i = 0
-            while i < len(node.body):
-                stmt = node.body[i]
-                result = visit(stmt, last_node, body_depth, 0)
-                
-                if isinstance(result, dict) and "if_node" in result:
-                    # Handle if-else blocks with proper merging
-                    if i + 1 < len(node.body):
-                        next_stmt = node.body[i + 1]
-                        next_result = visit(next_stmt, None, body_depth, 0)
-                        
-                        if isinstance(next_result, str):
-                            next_id = next_result
-                        elif isinstance(next_result, dict) and "if_node" in next_result:
-                            next_id = next_result["if_node"]
-                        else:
-                            next_id = next_result 
-                        
-                        if next_id is not None:
-                            create_edge(result["true_end"], next_id)
-                            if result["has_else"]:
-                                create_edge(result["false_end"], next_id)
-                            else:
-                                create_edge(result["if_node"], next_id, "False", False, "false")
-                        
-                        last_node = next_id
-                        i += 2
-                        continue
-                    else:
-                        # End of function body
-                        last_nodes.append(result["true_end"])
-                        if result["has_else"]:
-                            last_nodes.append(result["false_end"])
-                        else:
-                            last_nodes.append(result["if_node"])
-                        
-                        last_node = result["true_end"]
-                else:
-                    last_node = result
-                
-                i += 1
-
-            if last_node not in last_nodes:
-                last_nodes.append(last_node)
+            func_id = add_node(label, node.lineno, get_pos(branch_index, is_else), "function")
+            for p in parent_ids:
+                create_edge(p, func_id)
             
-            return func_id
+            # Body paths
+            body_exits = [func_id]
+            for stmt in node.body:
+                body_exits = visit(stmt, body_exits, depth + 1, branch_index + 1)
+            
+            # Connect body to End separately
+            last_nodes.extend(body_exits)
+            
+            # Return header as the "flow-through" for the definition itself
+            return [func_id]
 
         elif isinstance(node, ast.If):
-            # Create if node with better positioning
-            if_pos = get_position(depth, branch_index, is_else)
-            if_condition = ast.unparse(node.test)
-            if_id = add_node(f"if {if_condition}:", node.lineno, if_pos, "condition")
+            cond = ast.unparse(node.test)
+            if_id = add_node(f"if {cond}:", node.lineno, get_pos(branch_index, is_else), "condition")
+            for p in parent_ids:
+                create_edge(p, if_id)
             
-            if parent_id is not None:
-                create_edge(parent_id, if_id)
+            # True branch
+            true_exits = visit_block(node.body, [if_id], depth + 1, branch_index + 1, False, "True")
             
-            # Process true branch
-            true_branch = None
-            true_last = None
-            for i, stmt in enumerate(node.body):
-                # Saat i=0, parent adalah if_id. visit() akan otomatis membuat edge.
-                true_branch = visit(stmt, if_id if i == 0 else true_branch, depth + 1, branch_index + 1)
-                
-                # === MODIFIKASI: Tambahkan Label True ke edge pertama ===
-                if i == 0:
-                    # Ambil ID target (jika result dict, ambil if_node-nya)
-                    target_id = true_branch["if_node"] if isinstance(true_branch, dict) and "if_node" in true_branch else true_branch
-                    # Update edge yang baru saja dibuat dengan label True
-                    create_edge(if_id, target_id, "True", False, "true")
-                # ========================================================
-                
-                if i == len(node.body) - 1:
-                    true_last = true_branch
-            
-            # Process false branch
-            false_branch = None
-            false_last = None
+            # False branch
             if node.orelse:
-                for i, stmt in enumerate(node.orelse):
-                    false_branch = visit(stmt, if_id if i == 0 else false_branch, depth + 1, branch_index + 1, True)
-                    
-                    # === MODIFIKASI: Tambahkan Label False ke edge pertama Else ===
-                    if i == 0:
-                        target_id = false_branch["if_node"] if isinstance(false_branch, dict) and "if_node" in false_branch else false_branch
-                        create_edge(if_id, target_id, "False", False, "false")
-                    # =============================================================
-                    
-                    if i == len(node.orelse) - 1:
-                        false_last = false_branch
-            
-            # Return structure for proper merging
-            return {
-                "if_node": if_id,
-                "true_end": true_last or if_id,
-                "false_end": false_last or if_id,
-                "has_else": bool(node.orelse)
-            }
+                false_exits = visit_block(node.orelse, [if_id], depth + 1, branch_index, True, "False")
+                return true_exits + false_exits
+            else:
+                # No else, if_id itself is the false exit
+                return true_exits + [if_id]
 
         elif isinstance(node, ast.While) or isinstance(node, ast.For):
-            # Create loop header node
-            loop_pos = get_position(depth, branch_index, is_else)
-            
             if isinstance(node, ast.While):
-                loop_condition = ast.unparse(node.test)
-                loop_text = f"while {loop_condition}:"
+                cond = ast.unparse(node.test)
+                label = f"while {cond}:"
             else:
-                loop_target = ast.unparse(node.target)
-                loop_iter = ast.unparse(node.iter)
-                loop_text = f"for {loop_target} in {loop_iter}:"
+                t = ast.unparse(node.target)
+                it = ast.unparse(node.iter)
+                label = f"for {t} in {it}:"
             
-            loop_id = add_node(loop_text, node.lineno, loop_pos, "loop")
-
-            if parent_id is not None:
-                create_edge(parent_id, loop_id)
-
-            # Push loop info onto stack
+            loop_id = add_node(label, node.lineno, get_pos(branch_index, is_else), "loop")
+            for p in parent_ids:
+                create_edge(p, loop_id)
+            
             loop_stack.append(loop_id)
-
-            # Process loop body - FIXED VERSION
-            last_body_node_id = loop_id
-            final_body_node = None
             
-            for i, stmt in enumerate(node.body):
-                result = visit(stmt, last_body_node_id, depth + 1, branch_index + 1)
+            # Body branches back to header
+            body_exits = visit_block(node.body, [loop_id], depth + 1, branch_index + 1, False, "True")
+            for b in body_exits:
+                create_edge(b, loop_id, "loop back", True, "loop")
                 
-                # For chaining statements in loop body
-                if isinstance(result, dict) and "if_node" in result:
-                    # Handle if-else inside loop
-                    exit_nodes = get_exit_nodes(result)
-                    final_body_node = exit_nodes[-1] if exit_nodes else result["if_node"]
-                else:
-                    final_body_node = result
-                
-                last_body_node_id = final_body_node
-
-            # Create only ONE back edge from the final node of loop body
-            if final_body_node and final_body_node != loop_id:
-                create_edge(final_body_node, loop_id, "loop back", is_loop=True)
-
-            # Pop loop from stack
             loop_stack.pop()
-            
-            return loop_id
-
-        elif isinstance(node, ast.Try):
-            # Handle try-except-finally blocks
-            try_pos = get_position(depth, branch_index, is_else)
-            try_id = add_node("try:", node.lineno, try_pos, "try")
-            
-            if parent_id is not None:
-                create_edge(parent_id, try_id)
-            
-            # Process try body
-            try_last = try_id
-            for stmt in node.body:
-                try_last = visit(stmt, try_last, depth + 1, branch_index)
-            
-            # Process except handlers
-            for handler in node.handlers:
-                handler_pos = get_position(depth, branch_index + 2, False)
-                
-                if handler.type:
-                    exc_type = ast.unparse(handler.type)
-                    exc_name = handler.name if handler.name else ""
-                    handler_text = f"except {exc_type}" + (f" as {exc_name}" if exc_name else "") + ":"
-                else:
-                    handler_text = "except:"
-                    
-                handler_id = add_node(handler_text, handler.lineno, handler_pos, "except")
-                
-                # Create edge from try to except
-                create_edge(try_id, handler_id, "exception", False, "exception")
-                
-                # Process except body
-                handler_last = handler_id
-                for stmt in handler.body:
-                    handler_last = visit(stmt, handler_last, depth + 1, branch_index + 2)
-            
-            # Process else clause if present
-            if node.orelse:
-                else_pos = get_position(depth, branch_index + 1, True)
-                else_id = add_node("else:", node.orelse[0].lineno if node.orelse else None, else_pos, "else")
-                create_edge(try_last, else_id, "no exception")
-                
-                else_last = else_id
-                for stmt in node.orelse:
-                    else_last = visit(stmt, else_last, depth + 1, branch_index + 1)
-                
-                return else_last
-            
-            return try_last
+            return [loop_id] # Exit is always header (False path)
 
         elif isinstance(node, ast.Return):
-            ret_pos = get_position(depth, branch_index, is_else)
-            return_value = ast.unparse(node.value) if node.value else ""
-            return_id = add_node(f"return {return_value}", node.lineno, ret_pos, "return")
-            
-            if parent_id is not None:
-                create_edge(parent_id, return_id)
-                
-            last_nodes.append(return_id)
-            return return_id
-
-        elif isinstance(node, ast.Assign):
-            assign_code = f"{ast.unparse(node.targets[0])} = {ast.unparse(node.value)}"
-            assign_pos = get_position(depth, branch_index, is_else)
-            assign_id = add_node(assign_code, node.lineno, assign_pos, "assignment")
-            
-            if parent_id is not None:
-                create_edge(parent_id, assign_id)
-                
-            return assign_id
-
-        elif isinstance(node, ast.AugAssign):
-            target = ast.unparse(node.target)
-            op = get_operator_symbol(node.op)
-            value = ast.unparse(node.value)
-            assign_code = f"{target} {op}= {value}"
-            
-            assign_pos = get_position(depth, branch_index, is_else)
-            assign_id = add_node(assign_code, node.lineno, assign_pos, "assignment")
-            
-            if parent_id is not None:
-                create_edge(parent_id, assign_id)
-                
-            return assign_id
-
-        elif isinstance(node, ast.Expr):
-            expr_pos = get_position(depth, branch_index, is_else)
-            expr_label = ast.unparse(node)
-            expr_id = add_node(expr_label, node.lineno, expr_pos, "expression")
-            
-            if parent_id is not None:
-                create_edge(parent_id, expr_id)
-                
-            return expr_id
+            val = ast.unparse(node.value) if node.value else ""
+            ret_id = add_node(f"return {val}", node.lineno, get_pos(branch_index, is_else), "return")
+            for p in parent_ids:
+                create_edge(p, ret_id)
+            last_nodes.append(ret_id)
+            return [] # Returns DIE here
 
         elif isinstance(node, ast.Break):
-            break_pos = get_position(depth, branch_index, is_else)
-            break_id = add_node("break", node.lineno, break_pos, "break")
-            
-            if parent_id is not None:
-                create_edge(parent_id, break_id)
-            
-            return break_id
+            break_id = add_node("break", node.lineno, get_pos(branch_index, is_else), "break")
+            for p in parent_ids:
+                create_edge(p, break_id)
+            # Should connect to loop exit, but we handle via last_nodes for now
+            last_nodes.append(break_id)
+            return []
 
         elif isinstance(node, ast.Continue):
-            continue_pos = get_position(depth, branch_index, is_else)
-            continue_id = add_node("continue", node.lineno, continue_pos, "continue")
-            
-            if parent_id is not None:
-                create_edge(parent_id, continue_id)
-            
-            # Continue goes back to loop header
+            cont_id = add_node("continue", node.lineno, get_pos(branch_index, is_else), "continue")
+            for p in parent_ids:
+                create_edge(p, cont_id)
             if loop_stack:
-                create_edge(continue_id, loop_stack[-1], "continue", is_loop=True)
-            
-            return continue_id
-                
-        elif isinstance(node, ast.Call):
-            call_pos = get_position(depth, branch_index, is_else)
-            func_call = ast.unparse(node)
-            call_id = add_node(func_call, getattr(node, 'lineno', None), call_pos, "call")
-            
-            if parent_id is not None:
-                create_edge(parent_id, call_id)
-                
-            return call_id
-        
-        # Default for other node types
+                create_edge(cont_id, loop_stack[-1], "loop back", True, "loop")
+            return []
+
+        # Simple statements
         else:
-            node_pos = get_position(depth, branch_index, is_else)
             try:
-                node_label = ast.unparse(node)
+                label = ast.unparse(node)
             except:
-                node_label = f"{type(node).__name__}"
-                
-            new_id = add_node(node_label, getattr(node, 'lineno', None), node_pos)
+                label = f"{type(node).__name__}"
             
-            if parent_id is not None:
-                create_edge(parent_id, new_id)
-                
-            return new_id
+            style_type = "statement"
+            if isinstance(node, (ast.Assign, ast.AugAssign)): style_type = "assignment"
+            elif isinstance(node, ast.Expr): style_type = "expression"
+            elif isinstance(node, ast.Call): style_type = "call"
+            
+            node_id = add_node(label, getattr(node, 'lineno', None), get_pos(branch_index, is_else), style_type)
+            for p in parent_ids:
+                create_edge(p, node_id)
+            return [node_id]
 
-    # Create start node
-    root_x = x_offset
-    root_y = 50
-    start_id = add_node("Start", None, {"x": root_x, "y": root_y}, "control")
+    def visit_block(stmts, entering_ids, depth, branch_index, is_else, first_label=None):
+        current_ids = entering_ids
+        for i, stmt in enumerate(stmts):
+            # Special case for labeling the first stmt of a branch
+            if i == 0 and first_label:
+                # We need to intercept create_edge calls inside visit for the first stmt?
+                # No, visit will call create_edge. We can't easily label it from here.
+                # Let's pass the label to visit? Too complex.
+                # Solution: Pre-create a node for the first stmt? No.
+                # Let's just track the last edge index.
+                old_edge_count = len(edges)
+                current_ids = visit(stmt, current_ids, depth, branch_index, is_else)
+                for idx in range(old_edge_count, len(edges)):
+                    if edges[idx]["source"] in entering_ids:
+                        edges[idx]["label"] = first_label
+                        edges[idx]["type"] = "straight"
+                        edges[idx]["edge_type"] = "true" if first_label == "True" else "false"
+            else:
+                current_ids = visit(stmt, current_ids, depth, branch_index, is_else)
+        return current_ids
+
+    # Start Node
+    start_id = add_node("Start", None, {"x": x_offset, "y": 50}, "control")
     
-    # Process all statements in the AST
-    last_root = start_id
-    for stmt in tree.body:
-        last_root = visit(stmt, last_root)
+    # Process all root-level statements
+    final_exits = visit_block(tree.body, [start_id], 0, 0, False)
+    
+    # Filter out function definitions from being the SOLE exit of the file
+    # (to avoid the "Path: 1" issue where it just defines the function and ends)
+    for exit_id in final_exits:
+        node_idx = int(exit_id) - 1
+        if nodes[node_idx]["data"].get("node_type") != "function":
+            last_nodes.append(exit_id)
+        else:
+            # If a function is the last thing, we still want it to connect to End 
+            # ONLY IF there are no other paths? No, usually we want to see body paths.
+            # If we don't add it, the "Start -> Header -> End" path is removed. Correct.
+            pass
 
-    # Create end node and connect all final nodes
+    # End Node
     if nodes:
-        end_pos = {"x": x_offset, "y": (len(nodes) + 1) * y_spacing}
+        end_pos = {"x": x_offset, "y": (len(nodes) + 1) * 80}
         end_id = add_node("End", None, end_pos, "control")
         
-        # Connect final nodes to end
+        seen_edges = set()
         for final_node in last_nodes:
-            if final_node and final_node != end_id:
-                create_edge(final_node, end_id)
+            if final_node and final_node != end_id and (final_node, end_id) not in seen_edges:
+                # Check if it was a condition/loop to add "False" label
+                lbl = ""
+                for n in nodes:
+                    if n["id"] == final_node and n["data"]["node_type"] in ["condition", "loop"]:
+                        lbl = "False"
+                        break
+                create_edge(final_node, end_id, lbl)
+                seen_edges.add((final_node, end_id))
     
     return nodes, edges, parameters

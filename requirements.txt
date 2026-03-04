@@ -1,1 +1,4 @@
-a2wsgi
+uvicorn
+fastapi
+sqlalchemy
+pydantic

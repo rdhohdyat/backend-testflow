@@ -142,6 +142,16 @@ async def delete_project(project_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Project deleted successfully"}
 
+@app.delete("/codes/{code_id}/")
+async def delete_code_analysis(code_id: int, db: Session = Depends(get_db)):
+    """Hapus satu record analisis berdasarkan ID."""
+    code = db.query(Code).filter(Code.id == code_id).first()
+    if not code:
+        raise HTTPException(status_code=404, detail="Analisis tidak ditemukan.")
+    db.delete(code)
+    db.commit()
+    return {"message": "Analisis berhasil dihapus", "deleted_id": code_id}
+
 @app.get("/projects/{project_id}/export/")
 async def export_project(project_id: int, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -182,6 +192,11 @@ async def analyze_code(request: CodeRequest):
         
     paths = generate_execution_paths(cfg)
     cfg["execution_paths"] = paths
+    
+    # Calculate cyclomatic complexity: E - N + 2
+    cfg["cyclomatic_complexity"] = len(cfg["edges"]) - len(cfg["nodes"]) + 2
+    cfg["nodes_count"] = len(cfg["nodes"])
+    cfg["edges_count"] = len(cfg["edges"])
     
     unreachable = detect_unreachable_code(cfg)
     cfg["unreachable_code"] = unreachable

@@ -1,20 +1,8 @@
-def example(x, y):
-  if x > y:
-    return x
-  else:
-    return y
-
 def cek_genap_ganjil(angka):
     if angka % 2 == 0:
         return "Genap"
     else:
         return "Ganjil"
-    
-def faktorial(n):
-    if n == 0:
-        return 1
-    else:
-        return n * faktorial(n - 1)
     
 def jumlah_ganjil(n):
     start = 1
@@ -23,15 +11,23 @@ def jumlah_ganjil(n):
             total += i
     return total
   
-  
 def percabangan(x, y):
     if x > y:
         for i in range(1,5):
-            print("hello")
+            print("x " , i)
     else:
-        print("test")
+        print("y lebih besar")
+
+def perulangan(a, b):
+    hasil = 0
+    if(b > a):
+        for i in range(a, b):
+            hasil += i
+    else:
+        return "b kecil dari a"
+    return hasil
         
-def perulangan(a):
+def perulangan_bersarang(a):
     for i in range(1, a):
         for j in range(1, a):
             print("hallo")
@@ -42,15 +38,6 @@ def luas_persegi_panjang(panjang, lebar):
     else:
         print("Panjang dan lebar harus lebih besari dari 0!")
         
-def perulangan(a, b):
-    hasil = 0
-    if(b > a):
-        for i in range(a, b):
-            hasil += i
-    else:
-        return "b kecil dari a"
-    return hasil
-
 def klasifikasi_angka(x):
     if x > 0:
         if x % 2 == 0:
@@ -147,36 +134,82 @@ def test_loop(n):
     print("Selesai")
 
 
-def analisis_bilangan(angka):
-    i = 1
-    jumlah_genap = 0
-    jumlah_ganjil = 0
-    jumlah_kelipatan_5 = 0
-    total = 0
-
-    if angka <= 0:
-        print("Masukkan harus lebih dari nol.")
-        return
-
-    while i <= angka:
-        total += i
-
-        if i % 2 == 0:
-            print(f"{i} adalah genap")
-            jumlah_genap += 1
-            if i % 4 == 0:
-                print(f"{i} juga kelipatan 4")
-        elif i % 5 == 0:
-            print(f"{i} adalah kelipatan 5")
-            jumlah_kelipatan_5 += 1
+def complext_program(limit):
+  total = 0
+  for i in range(1, limit + 1):
+    if i % 2 == 0:
+      for j in range(1, 4):
+        if j % 2 == 0:
+          total += i * j
         else:
-            print(f"{i} adalah ganjil")
-            jumlah_ganjil += 1
+          total -= i * j
+    else:
+      total += i
+  if total > 50:
+    return "Total is high"
+  elif total == 50:
+    return "Total is exactly 50"
+  else:
+    return "Total is low"
 
-        i += 1
+def test(a,b):
+  if a != 0 and b != 0:
+    if a > b:
+      print("a besar dari b")
+    else:
+      for i in range(1, 5):
+        print("hallo")
+  else:
+    for i in range(1,5):
+      print("a dan b 0")
+      
+      
+def proses_topup(jumlah, pin_benar, input_pin):
+    percobaan = 1
+    
+    while percobaan <= 3:
+        if input_pin == pin_benar:    
+            if jumlah >= 10000:          
+                return "Sukses"          
+            else:
+                return "Minimal 10rb"    
+        else:
+            percobaan += 1               
+    
+    return "Akun Terblokir"            
 
-    print("\nRingkasan:")
-    print(f"Total: {total}")
-    print(f"Jumlah genap: {jumlah_genap}")
-    print(f"Jumlah ganjil: {jumlah_ganjil}")
-    print(f"Jumlah kelipatan 5: {jumlah_kelipatan_5}")
+#"Input (jumlah, pin, input)",Output,Jalur (Line Numbers),Kategori Jalur
+#Jalur A,"20000, 123, 123","""Sukses""","[1, 2, 3, 4, 5, 6]",Happy Path (Kondisi Ideal)
+#Jalur B,"5000, 123, 123","""Min 10rb""","[1, 2, 3, 4, 5, 7]",Validation Path (Gagal di validasi saldo)
+#Jalur C,"20000, 123, 000","""Terblokir""","[1, 2, 3, 4, 8, 3, 4, 8, 3, 4, 8, 3, 9]",Looping Path (Gagal karena perulangan habis)
+
+
+def analisis_kesehatan(berat, tinggi, usia):
+    bmi = berat / (tinggi * tinggi)
+    
+    if bmi < 18.5:
+        status = "Underweight"
+    elif bmi < 25:
+        status = "Normal"      
+    else:
+        status = "Overweight" 
+        
+    if status == "Normal":    
+        return "Pertahankan" 
+    
+    saran_porsi = 0
+    while saran_porsi < 2:    
+        saran_porsi += 1       
+        
+    return "Konsultasi Dokter" 
+
+def cetak_kotak(sisi):
+    for i in range(sisi):
+        for j in range(sisi):
+            print("*", end=" ") 
+        
+        print() 
+    
+    return "Selesai"
+
+#test case = 0 dan 2
